@@ -768,3 +768,40 @@ exports['test numeric names #231'] = function (assert) {
   assert.equal(map.names.length, 1, "Should have one name");
   assert.equal(map.names[0], "8", "Should have the right name");
 };
+
+exports['test serializing large generated line gaps'] = function (assert) {
+  var map = new SourceMapGenerator({ file: 'min.js' });
+  map.addMapping({ generated: { line: 1, column: 0 } });
+  map.addMapping({ generated: { line: 3, column: 0 } });
+  map.addMapping({ generated: { line: 1e6 + 3, column: 0 } });
+
+  var mappings = map.toJSON().mappings;
+  assert.equal(mappings.length, 3 + 2 + 1e6);
+  assert.equal(mappings.slice(0, 4), 'A;;A');
+  assert.equal(mappings.slice(-2), ';A');
+  assert.equal(mappings.indexOf('A', 4), mappings.length - 1);
+};
+
+exports['test copying an indexed map with a large section offset into a generator'] = function (assert) {
+  // CVE-2026-93749: copying mappings from an indexed map with a large
+  // section offset.line must not build the ';' run one rope node at a time.
+  var consumer = new SourceMapConsumer({
+    version: 3,
+    sections: [{
+      offset: { line: 1e7, column: 0 },
+      map: { version: 3, sources: ['a.js'], names: [], mappings: 'AAAA' }
+    }]
+  });
+  var map = new SourceMapGenerator({ file: 'min.js' });
+  consumer.eachMapping(function (m) {
+    map.addMapping({
+      generated: { line: m.generatedLine, column: m.generatedColumn },
+      original: { line: m.originalLine, column: m.originalColumn },
+      source: m.source
+    });
+  });
+
+  var mappings = map.toJSON().mappings;
+  assert.equal(mappings.length, 1e7 + 4);
+  assert.equal(mappings.slice(-5), ';AAAA');
+};
